@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  quiz-bot:
+    build: .
+    image: quiz-telegram-bot:latest
+    container_name: quiz-telegram-bot
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      QUESTIONS_DIRECTORY: /app/questions
+      DATABASE_PATH: /app/data/quiz_bot.db
+      TZ: UTC
+    env_file:
+      - .env
+    volumes:
+      - ./questions:/app/questions:ro
+      - ./data:/app/data:Z
+    healthcheck:
+      test: ["CMD", "python", "-c", "import importlib;importlib.import_module('bot') and print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
