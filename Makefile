@@ -30,7 +30,8 @@ help:
 	@echo "  make clean             - Remove caches and build artifacts"
 	@echo "  make clean-data        - Remove SQLite data files"
 	@echo "  make docker-build      - Build Docker image ($(IMAGE))"
-	@echo "  make docker-run        - Run container (name: $(CONTAINER))"
+	@echo "  make docker-run        - Run container (auto-detects VPS/local)"
+	@echo "  make docker-run-volume - Run container with Docker volume"
 	@echo "  make docker-stop       - Stop container"
 	@echo "  make docker-rm         - Remove container"
 	@echo "  make docker-logs       - Tail container logs"
@@ -96,16 +97,39 @@ docker-build:
 .PHONY: docker-run
 docker-run: docker-rm
 	@mkdir -p $(DATA_DIR)
-	@chown -R $$(id -u):$$(id -g) $(DATA_DIR) || true
-	@chmod 775 $(DATA_DIR) || true
+	@# Try to set permissions, fall back to root user if permission denied
+	@if chown -R $$(id -u):$$(id -g) $(DATA_DIR) 2>/dev/null && chmod 775 $(DATA_DIR) 2>/dev/null; then \
+		echo "Setting container user to $$(id -u):$$(id -g)"; \
+		USER_ARG="--user $$(id -u):$$(id -g)"; \
+		VOLUME_ARG=":Z"; \
+	else \
+		echo "Permission denied - running as root (VPS mode)"; \
+		USER_ARG="--user root"; \
+		VOLUME_ARG=""; \
+	fi; \
+	docker run -d \
+	  --name $(CONTAINER) \
+	  --restart unless-stopped \
+	  $$USER_ARG \
+	  -e TELEGRAM_BOT_TOKEN=$${TELEGRAM_BOT_TOKEN} \
+	  -e QUESTIONS_DIRECTORY=/app/$(QUESTIONS_DIR) \
+	  -e DATABASE_PATH=/app/$(DATA_DIR)/quiz_bot.db \
+	  -v $$(pwd)/$(QUESTIONS_DIR):/app/$(QUESTIONS_DIR):ro \
+	  -v $$(pwd)/$(DATA_DIR):/app/$(DATA_DIR)$$VOLUME_ARG \
+	  $(IMAGE)
+
+# Alternative with docker volume
+.PHONY: docker-run-volume
+docker-run-volume: docker-rm
+	docker volume create quiz-bot-data || true
 	docker run -d \
 	  --name $(CONTAINER) \
 	  --restart unless-stopped \
 	  -e TELEGRAM_BOT_TOKEN=$${TELEGRAM_BOT_TOKEN} \
 	  -e QUESTIONS_DIRECTORY=/app/$(QUESTIONS_DIR) \
-	  -e DATABASE_PATH=/app/$(DATA_DIR)/quiz_bot.db \
+	  -e DATABASE_PATH=/app/data/quiz_bot.db \
 	  -v $$(pwd)/$(QUESTIONS_DIR):/app/$(QUESTIONS_DIR):ro \
-	  -v $$(pwd)/$(DATA_DIR):/app/$(DATA_DIR):Z \
+	  -v quiz-bot-data:/app/data \
 	  $(IMAGE)
 
 .PHONY: docker-stop
